@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v3
     - name: Use Node.js
@@ -27,6 +29,10 @@ jobs:
   terraform:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
     - uses: actions/checkout@v3
     - name: Setup Terraform
@@ -45,7 +51,7 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
-        
+
     - name: Terraform Validate
       run: |
         cd terraform
@@ -60,7 +66,7 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
-        
+
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
@@ -70,16 +76,16 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
-        
+
     - name: Save Terraform Output
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         cd terraform
         terraform output -json > ../terraform-output.json
-        
+
     - name: Upload Terraform Output
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-output
         path: terraform-output.json
@@ -88,40 +94,44 @@ jobs:
     needs: terraform
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        
+
     - name: Install Ansible
       run: |
         python -m pip install --upgrade pip
         pip install ansible
-        
+
     - name: Download Terraform Output
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: terraform-output
-        
+
     - name: Set up SSH key
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
-        
+
     - name: Generate Ansible Inventory
       run: |
         python -c '
         import json
         import os
-        
+
         with open("terraform-output.json", "r") as f:
             tf_output = json.load(f)
-            
+
         with open("ansible/inventory/hosts.yml", "w") as f:
             f.write("""---
         all:
@@ -143,7 +153,7 @@ jobs:
                 tf_output["ibm_floating_ip"]["value"]
             ))
         '
-        
+
     - name: Run Ansible Playbook
       run: |
         cd ansible
