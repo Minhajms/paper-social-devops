@@ -89,10 +89,11 @@ resource "ibm_is_instance" "instance" {
     security_groups = [ibm_is_security_group.sg.id]
   }
 
+  # Fixed to avoid self-reference
   user_data = <<-EOF
     #!/bin/bash
     echo "CLOUD_PROVIDER=IBM Cloud" >> /etc/environment
-    echo "INSTANCE_ID=${ibm_is_instance.instance.id}" >> /etc/environment
+    echo "INSTANCE_ID=ibm-instance" >> /etc/environment
     echo "REGION=${var.ibm_region}" >> /etc/environment
   EOF
 

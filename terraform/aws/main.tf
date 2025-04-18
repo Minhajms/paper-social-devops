@@ -146,11 +146,12 @@ resource "aws_instance" "web" {
     create_before_destroy = true
   }
 
-  # Add this metadata to make it available to the application
+  # Add metadata to make it available to the application
+  # Fixed to avoid self-reference
   user_data = <<-EOF
     #!/bin/bash
     echo "CLOUD_PROVIDER=AWS" >> /etc/environment
-    echo "INSTANCE_ID=${aws_instance.web.id}" >> /etc/environment
+    echo "INSTANCE_ID=aws-instance" >> /etc/environment
     echo "REGION=${var.aws_region}" >> /etc/environment
   EOF
 }
