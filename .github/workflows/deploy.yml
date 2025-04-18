@@ -67,50 +67,22 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
 
-    - name: Terraform Plan Only
+    - name: Terraform Apply
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         cd terraform
-        terraform plan
+        terraform apply -auto-approve
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
 
-    # Commenting out the actual apply for now to avoid potential costs
-    # - name: Terraform Apply
-    #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    #   run: |
-    #     cd terraform
-    #     terraform apply -auto-approve
-    #   env:
-    #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    #     IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
-
-    # Since we're not actually creating resources, we'll use dummy outputs
-    - name: Create Dummy Terraform Output
+    - name: Save Terraform Output
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        cat > terraform-output.json << 'EOJSON'
-        {
-          "aws_instance_id": {
-            "value": "i-dummy12345"
-          },
-          "aws_public_ip": {
-            "value": "192.168.1.1"
-          },
-          "aws_public_dns": {
-            "value": "ec2-192-168-1-1.us-east-1.compute.amazonaws.com"
-          },
-          "ibm_instance_id": {
-            "value": "ibm-dummy67890"
-          },
-          "ibm_floating_ip": {
-            "value": "192.168.2.2"
-          }
-        }
-        EOJSON
+        cd terraform
+        terraform output -json > ../terraform-output.json
+        cp id_rsa ../id_rsa
 
     - name: Upload Terraform Output
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -118,14 +90,6 @@ jobs:
       with:
         name: terraform-output
         path: terraform-output.json
-
-    # Create a dummy SSH key for demonstration
-    - name: Create Dummy SSH Key
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        mkdir -p ~/.ssh
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
-        cp ~/.ssh/id_rsa .
 
     - name: Upload SSH Key
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -170,7 +134,7 @@ jobs:
         mkdir -p ~/.ssh
         mv id_rsa ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+        ssh-keyscan -H github.com >> ~/.ssh/known_hosts
 
     - name: Generate Ansible Inventory
       run: |
@@ -189,12 +153,10 @@ jobs:
               hosts:
                 aws_instance:
                   ansible_host: {}
-                  ansible_connection: local # Using local connection for demo
             ibm:
               hosts:
                 ibm_instance:
                   ansible_host: {}
-                  ansible_connection: local # Using local connection for demo
           vars:
             ansible_user: ubuntu
             ansible_ssh_private_key_file: ~/.ssh/id_rsa
@@ -206,10 +168,46 @@ jobs:
             ))
         '
 
-    # For demo purposes, just print the inventory instead of actually running Ansible
-    - name: Show Ansible Inventory
+    - name: Wait for SSH connectivity
+      run: |
+        python -c '
+        import json
+        import time
+        import subprocess
+
+        with open("terraform-output.json", "r") as f:
+            tf_output = json.load(f)
+
+        aws_ip = tf_output["aws_public_ip"]["value"]
+        ibm_ip = tf_output["ibm_floating_ip"]["value"]
+
+        def check_ssh(ip):
+            for i in range(20):  # Try for about 5 minutes
+                try:
+                    print(f"Attempting to connect to {ip}...")
+                    result = subprocess.run(
+                        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa ubuntu@{ip} exit",
+                        shell=True,
+                        capture_output=True
+                    )
+                    if result.returncode == 0:
+                        print(f"Successfully connected to {ip}")
+                        return True
+                    else:
+                        print(f"Failed to connect to {ip}, retrying in 15 seconds...")
+                except Exception as e:
+                    print(f"Error connecting to {ip}: {e}")
+                time.sleep(15)
+            return False
+
+        aws_success = check_ssh(aws_ip)
+        ibm_success = check_ssh(ibm_ip)
+
+        if not aws_success or not ibm_success:
+            raise Exception("Could not establish SSH connections to one or more instances")
+        '
+
+    - name: Run Ansible Playbook
       run: |
         cd ansible
-        cat inventory/hosts.yml
-        echo "In a real deployment, we would run: ansible-playbook -i inventory/hosts.yml site.yml"
-
+        ansible-playbook -i inventory/hosts.yml site.yml -v
