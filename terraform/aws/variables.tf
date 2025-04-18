@@ -13,7 +13,7 @@ variable "project_name" {
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "t2.nano"  # Changed from t2.micro to t2.nano to work within vCPU limits
+  default     = "t2.micro"  # Updated to Free Tier–eligible instance type
 }
 
 variable "ssh_public_key" {
