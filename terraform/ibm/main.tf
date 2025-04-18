@@ -73,7 +73,7 @@ data "ibm_is_image" "ubuntu" {
 
 resource "ibm_is_ssh_key" "ssh_key" {
   name       = "${var.project_name}-key"
-  public_key = file(var.ssh_public_key_path)
+  public_key = var.ssh_public_key  # Using the variable directly instead of file()
 }
 
 resource "ibm_is_instance" "instance" {

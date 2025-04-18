@@ -1,4 +1,4 @@
-variable "aws_region" {
+kvariable "aws_region" {
   description = "AWS region to deploy resources"
   type        = string
   default     = "us-east-1"
@@ -16,8 +16,13 @@ variable "instance_type" {
   default     = "t2.micro"
 }
 
+variable "ssh_public_key" {
+  description = "Public SSH key content for instance access"
+  type        = string
+}
+
 variable "ssh_public_key_path" {
-  description = "Path to the public SSH key for instance access"
+  description = "Path to the public SSH key for instance access (deprecated)"
   type        = string
   default     = "~/.ssh/id_rsa.pub"
 }

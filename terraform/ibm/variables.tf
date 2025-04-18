@@ -16,8 +16,13 @@ variable "instance_profile" {
   default     = "cx2-2x4"
 }
 
+variable "ssh_public_key" {
+  description = "Public SSH key content for instance access"
+  type        = string
+}
+
 variable "ssh_public_key_path" {
-  description = "Path to the public SSH key for instance access"
+  description = "Path to the public SSH key for instance access (deprecated)"
   type        = string
   default     = "~/.ssh/id_rsa.pub"
 }
