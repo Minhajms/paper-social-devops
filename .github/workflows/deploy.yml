@@ -35,7 +35,7 @@ jobs:
       id-token: write
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Format Terraform files
       run: |
         cd terraform
@@ -51,7 +51,7 @@ jobs:
       run: |
         # Generate SSH key for Ansible
         ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
-        
+
         # Create mock terraform outputs
         echo '{
           "aws_instance_id": {
