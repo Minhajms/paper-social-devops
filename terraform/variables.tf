@@ -13,7 +13,7 @@ variable "aws_region" {
 variable "aws_instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "t2.micro"
+  default     = "t2.nano"  # Changed from t2.micro to t2.nano to work within vCPU limits
 }
 
 variable "ibm_region" {
