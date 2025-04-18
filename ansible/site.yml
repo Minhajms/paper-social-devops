@@ -1,0 +1,16 @@
+---
+- name: Configure AWS instance
+  hosts: aws
+  become: true
+  roles:
+    - docker
+    - webapp
+    - monitoring
+
+- name: Configure IBM instance
+  hosts: ibm
+  become: true
+  roles:
+    - docker
+    - webapp
+    - monitoring

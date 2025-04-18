@@ -1,0 +1,31 @@
+---
+- name: Create app directory
+  file:
+    path: /home/{{ ansible_user }}/paper-social-app
+    state: directory
+    mode: '0755'
+
+- name: Copy application files
+  copy:
+    src: "{{ item }}"
+    dest: /home/{{ ansible_user }}/paper-social-app/
+    mode: '0644'
+  with_items:
+    - ../app/package.json
+    - ../app/server.js
+    - ../app/Dockerfile
+
+- name: Create docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: /home/{{ ansible_user }}/paper-social-app/docker-compose.yml
+    mode: '0644'
+  vars:
+    cloud_provider: "{{ 'AWS' if inventory_hostname in groups['aws'] else 'IBM Cloud' }}"
+    instance_id: "{{ 'i-12345' if inventory_hostname in groups['aws'] else 'ibm-67890' }}"
+    region: "{{ 'us-east-1' if inventory_hostname in groups['aws'] else 'us-south' }}"
+  notify: Restart application
+
+- name: Build and start the application
+  shell: cd /home/{{ ansible_user }}/paper-social-app && docker-compose up -d --build
+

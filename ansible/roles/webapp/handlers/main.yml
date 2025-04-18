@@ -1,0 +1,4 @@
+---
+- name: Restart application
+  shell: cd /home/{{ ansible_user }}/paper-social-app && docker-compose restart
+

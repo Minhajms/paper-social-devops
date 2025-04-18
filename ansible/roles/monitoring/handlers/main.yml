@@ -1,0 +1,3 @@
+---
+- name: Start monitoring stack
+  shell: cd /home/{{ ansible_user }}/monitoring && docker-compose up -d
