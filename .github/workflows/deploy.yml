@@ -26,7 +26,7 @@ jobs:
         cd app
         npm test
 
-  terraform:
+  aws_deploy:
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -43,6 +43,63 @@ jobs:
         cd terraform
         terraform fmt
 
+    - name: Create AWS-only Terraform Configuration
+      run: |
+        # Create a AWS-only configuration
+        cat > terraform/aws_only.tf << 'EOTF'
+        terraform {
+          required_providers {
+            aws = {
+              source  = "hashicorp/aws"
+              version = "~> 4.0"
+            }
+            tls = {
+              source  = "hashicorp/tls"
+              version = "~> 4.0"
+            }
+            local = {
+              source  = "hashicorp/local"
+              version = "~> 2.0"
+            }
+          }
+        }
+
+        # Create an SSH key
+        resource "tls_private_key" "ssh" {
+          algorithm = "RSA"
+          rsa_bits  = 4096
+        }
+
+        # Include AWS module only
+        module "aws_infra" {
+          source = "./aws"
+
+          project_name   = var.project_name
+          aws_region     = var.aws_region
+          instance_type  = var.aws_instance_type
+          ssh_public_key = tls_private_key.ssh.public_key_openssh
+          tags           = var.tags_as_map
+        }
+
+        # Output the private key for Ansible to use
+        resource "local_file" "private_key" {
+          content         = tls_private_key.ssh.private_key_pem
+          filename        = "${path.module}/id_rsa"
+          file_permission = "0600"
+        }
+
+        # Mock IBM outputs
+        output "ibm_instance_id" {
+          description = "Mocked ID of the IBM Cloud instance"
+          value       = "ibm-mock-instance"
+        }
+
+        output "ibm_floating_ip" {
+          description = "Mocked Floating IP address of the IBM Cloud instance"
+          value       = "192.168.2.20"  # Mocked IP for demo
+        }
+        EOTF
+
     - name: Terraform Init
       run: |
         cd terraform
@@ -50,53 +107,53 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        IC_API_KEY: ${{ secrets.IBM_CLOUD_API_KEY }}
 
     - name: Terraform Validate
       run: |
         cd terraform
         terraform validate
 
-    - name: Mock Terraform Output
+    - name: Terraform Plan
       run: |
-        cat > terraform-output.json << 'EOJSON'
-        {
-          "aws_instance_id": {
-            "value": "i-mock12345"
-          },
-          "aws_public_ip": {
-            "value": "192.168.1.10"
-          },
-          "aws_public_dns": {
-            "value": "ec2-192-168-1-10.us-east-1.compute.amazonaws.com"
-          },
-          "ibm_instance_id": {
-            "value": "ibm-mock67890"
-          },
-          "ibm_floating_ip": {
-            "value": "192.168.2.20"
-          }
-        }
-        EOJSON
+        cd terraform
+        terraform plan
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-    - name: Generate SSH Key for Artifacts
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        ssh-keygen -t rsa -b 4096 -f id_rsa -N ""
+        cd terraform
+        terraform apply -auto-approve
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    - name: Save Terraform Output
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        cd terraform
+        terraform output -json > ../terraform-output.json
+        cp id_rsa ../id_rsa
 
     - name: Upload Terraform Output
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: actions/upload-artifact@v4
       with:
         name: terraform-output
         path: terraform-output.json
 
     - name: Upload SSH Key
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: actions/upload-artifact@v4
       with:
         name: ssh-key
         path: id_rsa
 
   ansible:
-    needs: terraform
+    needs: aws_deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -149,33 +206,60 @@ jobs:
               hosts:
                 aws_instance:
                   ansible_host: {}
-                  ansible_connection: local # Mock connection for demo
             ibm:
               hosts:
                 ibm_instance:
                   ansible_host: {}
-                  ansible_connection: local # Mock connection for demo
+                  ansible_connection: local  # Mock connection for IBM
           vars:
             ansible_user: ubuntu
             ansible_ssh_private_key_file: ~/.ssh/id_rsa
             ansible_python_interpreter: /usr/bin/python3
+            ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         """.format(
                 tf_output["aws_public_ip"]["value"],
                 tf_output["ibm_floating_ip"]["value"]
             ))
         '
 
-    # Instead of actual deployment, show what would happen
-    - name: Show Ansible Inventory and Execution Plan
+    - name: Wait for AWS SSH connectivity
       run: |
-        echo "======= ANSIBLE INVENTORY ======="
-        cat ansible/inventory/hosts.yml
-        echo ""
-        echo "======= EXECUTION PLAN ======="
-        echo "1. Ansible would install Docker on AWS and IBM instances"
-        echo "2. Ansible would deploy Paper.Social web app to both clouds"
-        echo "3. Ansible would configure Prometheus + Grafana monitoring"
-        echo ""
-        echo "In a real deployment with proper cloud credentials:"
-        echo "- Web app would be available at: http://AWS_IP and http://IBM_IP"
-        echo "- Monitoring would be accessible at: http://AWS_IP:3000 and http://IBM_IP:3000"
+        python -c '
+        import json
+        import time
+        import subprocess
+
+        with open("terraform-output.json", "r") as f:
+            tf_output = json.load(f)
+
+        aws_ip = tf_output["aws_public_ip"]["value"]
+
+        def check_ssh(ip):
+            for i in range(20):  # Try for about 5 minutes
+                try:
+                    print(f"Attempting to connect to {ip}...")
+                    result = subprocess.run(
+                        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa ubuntu@{ip} exit",
+                        shell=True,
+                        capture_output=True
+                    )
+                    if result.returncode == 0:
+                        print(f"Successfully connected to {ip}")
+                        return True
+                    else:
+                        print(f"Failed to connect to {ip}, retrying in 15 seconds...")
+                except Exception as e:
+                    print(f"Error connecting to {ip}: {e}")
+                time.sleep(15)
+            return False
+
+        aws_success = check_ssh(aws_ip)
+
+        if not aws_success:
+            raise Exception("Could not establish SSH connection to AWS instance")
+        '
+
+    - name: Run Ansible Playbook
+      run: |
+        cd ansible
+        ansible-playbook -i inventory/hosts.yml site.yml -v
