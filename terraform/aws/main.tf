@@ -115,11 +115,15 @@ resource "aws_security_group" "web" {
   )
 }
 
+# Find existing key pair or create a new one
 resource "aws_key_pair" "deployer" {
-  key_name   = "${var.project_name}-key"
-  public_key = var.ssh_public_key  # Using the variable directly instead of file()
+  key_name_prefix = "${var.project_name}-key-"  # Use prefix instead of fixed name
+  public_key      = var.ssh_public_key
+  tags            = var.tags
 
-  tags = var.tags
+  lifecycle {
+    create_before_destroy = true  # Create new key before destroying old one
+  }
 }
 
 # Use a hardcoded AMI ID instead of data source due to permissions
