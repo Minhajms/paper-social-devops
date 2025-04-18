@@ -13,12 +13,13 @@ output "aws_public_dns" {
   value       = module.aws_infra.aws_public_dns
 }
 
+# Mock IBM outputs for demonstration
 output "ibm_instance_id" {
-  description = "ID of the IBM Cloud instance"
-  value       = module.ibm_infra.ibm_instance_id
+  description = "Mocked ID of the IBM Cloud instance"
+  value       = "ibm-mock-instance"
 }
 
 output "ibm_floating_ip" {
-  description = "Floating IP address of the IBM Cloud instance"
-  value       = module.ibm_infra.ibm_floating_ip
+  description = "Mocked Floating IP address of the IBM Cloud instance"
+  value       = "192.168.2.20"  # Mocked IP for demo
 }
