@@ -1,3 +1,16 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+    ibm = {
+      source  = "IBM-Cloud/ibm"
+      version = "~> 1.45.0"
+    }
+  }
+}
+
 module "aws_infra" {
   source = "./aws"
 
